@@ -1,0 +1,70 @@
+#Created a project folder
+#Used web services for determninig ethnicity, given the spread of haplogroups the ethnic groups is european caucasian
+#For analyzing SNPs related to diseases I'll use R
+
+library(readr)
+library(gwascat)
+library(dplyr)
+library(stringr)
+
+#loading the dataset
+genome <- read_tsv("SNP_raw_v4_Full_20170514175358.txt", skip = 19, col_types = cols(
+  `# rsid` = col_character(),
+  chromosome = col_character(),
+  position = col_integer(),
+  genotype = col_character())
+)
+
+# renaming # rsid to rsid 
+colnames(genome)[1] <- "rsid"
+
+# as a result, table with 610526 SNPs 
+dim(genome)
+
+# uploading GWAS data
+gwas_data <- as.data.frame(makeCurrentGwascat())
+
+#merging data with case studies SNPs and GWAS table
+output <- inner_join(genome, gwas_data, by = c("rsid" = "SNPS"))
+
+# 24785 entries/SNPs
+
+
+
+# making additional column with the count of risk alleles
+output$risk_allele_clean <- str_sub(output$STRONGEST.SNP.RISK.ALLELE, -1)
+output$my_allele_1 <- str_sub(output$genotype, 1, 1)
+output$my_allele_2 <- str_sub(output$genotype, 2, 2)
+output$have_risk_allele_count <- if_else(output$my_allele_1 == output$risk_allele_clean, 1, 0) + if_else(output$my_allele_2 == output$risk_allele_clean, 1, 0)
+
+# writing the table - can be found in repository
+write.table(output, file = "output.csv")
+
+# Focusing on the SNPs on both alleles
+x <- filter(output, have_risk_allele_count == 2)
+# 3990 entries
+
+# Cancer and diabetes asscoiated SNPs
+cancer <- select(x, rsid, DISEASE.TRAIT, STUDY, risk_allele = risk_allele_clean, your_geneotype = genotype) %>% 
+  filter(str_detect(tolower(DISEASE.TRAIT), "cancer") | str_detect(tolower(DISEASE.TRAIT), "diabetes")) %>%
+  distinct()
+
+# looking for SNPS with 1 risk allele and writing the table
+
+y <- filter(output, have_risk_allele_count >= 1)
+write.table(y, file = "1_risk_allele.csv")
+
+# looking for SNPs with 2 risk allels and writing the table
+x <- filter(output, have_risk_allele_count == 2)
+
+write.table(x, file = "2_risk_alleles.csv")
+
+# Filtering specific SNPs to doublecheck the data obtained through web services
+filter(output, rsid == "rs4340") %>%
+  select(rsid, risk_allele_clean, my_allele_2, my_allele_1, STUDY)
+
+
+# checked all SNPs of interest, in R a lot of repeating results and not causal SNPs
+# but overall the results are quite similar
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
